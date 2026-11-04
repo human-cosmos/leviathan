@@ -1,0 +1,19 @@
+{
+  "name": "leviathan",
+  "version": "1.0.0",
+  "description": "LEVIATHAN — an 83-second anime short rendered entirely in code (three.js), captured headless and packed into one HTML file.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node tools/check.mjs 60",
+    "snap": "node tools/snap.mjs --scale 1",
+    "audio": "node tools/render-audio.mjs",
+    "render": "node tools/render.mjs",
+    "player": "node tools/build-player.mjs",
+    "build": "node tools/render-audio.mjs && node tools/render.mjs && node tools/build-player.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "23.11.1",
+    "three": "0.170.0"
+  }
+}

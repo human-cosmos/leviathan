@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leviathan soundtrack</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #fbf7ee; --ink: #1d2433; --mute: #6b7385; --line: #d9d2c2; --acc: #2a7fb8; --warm: #e0663a; --card: #ffffff; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #11141b; --ink: #e8e4da; --mute: #9aa1b0; --line: #2b3140; --acc: #6db7ea; --warm: #f08a5d; --card: #181c25; } }
+  :root[data-theme="dark"] { --bg: #11141b; --ink: #e8e4da; --mute: #9aa1b0; --line: #2b3140; --acc: #6db7ea; --warm: #f08a5d; --card: #181c25; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; } p.sub { margin: 0 0 16px; color: var(--mute); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  button { background: var(--acc); color: #fff; border: 0; border-radius: 6px; padding: 7px 14px; font: inherit; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #status { color: var(--mute); }
+  canvas { width: 100%; height: 220px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; display: block; }
+  audio { width: 100%; margin: 10px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td { border-top: 1px solid var(--line); padding: 3px 6px; vertical-align: top; }
+  td.t { font-variant-numeric: tabular-nums; color: var(--mute); width: 64px; } td.k { width: 60px; color: var(--mute); }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Leviathan — soundtrack</h1>
+  <p class="sub">Synthesized live in an OfflineAudioContext (48 kHz stereo, 83.000 s), timed to CUES in src/shots.js.</p>
+  <div class="row"><button id="go">Render</button><a id="dl" download="soundtrack.wav" hidden>Download WAV</a><span id="status"></span></div>
+  <canvas id="wave" width="2200" height="440"></canvas>
+  <audio id="player" controls></audio>
+  <table id="cues"></table>
+  <pre id="rep"></pre>
+</main>
+<script type="module">
+  import { renderSoundtrack } from './src/audio.js';
+  import { CUES, SHOTS, DURATION } from './src/shots.js';
+
+  // headless entry used by tools/render-audio.mjs
+  let last = null;
+  const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+  window.AUDIO = {
+    async render(opts = {}) {
+      const msgs = [];
+      last = await renderSoundtrack({ ...opts, log: (m) => { msgs.push(m); console.log(m); } });
+      last.b64 = b64(last.wav);
+      if (last.stems) last.stemsB64 = Object.fromEntries(Object.entries(last.stems).map(([k, v]) => [k, b64(v)]));
+      return { report: last.report, length: last.b64.length, log: msgs };
+    },
+    chunk(i, n, which = 'mix') { const s = which === 'mix' ? last.b64 : last.stemsB64[which]; return s.slice(i, i + n); },
+    size(which = 'mix') { return which === 'mix' ? last.b64.length : last.stemsB64[which].length; },
+  };
+  window.AUDIO_READY = true;
+
+  // interactive preview
+  const $ = (id) => document.getElementById(id);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  function draw(L, R, cues) {
+    const cv = $('wave'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = css('--line');
+    SHOTS.forEach((s, i) => { if (i % 2) g.fillRect(s.start / DURATION * W, 0, (s.end - s.start) / DURATION * W, H); });
+    g.fillStyle = css('--acc');
+    const step = L.length / W;
+    for (let x = 0; x < W; x++) {
+      let mx = 0; const a = Math.floor(x * step), b = Math.floor((x + 1) * step);
+      for (let i = a; i < b; i += 4) mx = Math.max(mx, Math.abs(L[i]), Math.abs(R[i]));
+      const h = mx * H * 0.45; g.fillRect(x, H / 2 - h, 1, 2 * h);
+    }
+    g.fillStyle = css('--ink'); g.font = '18px system-ui';
+    SHOTS.forEach((s) => g.fillText(s.name, s.start / DURATION * W + 6, 22));
+    g.strokeStyle = css('--warm'); g.lineWidth = 2;
+    for (const [t, kind] of cues) if (kind === 'SFX') { const x = t / DURATION * W; g.beginPath(); g.moveTo(x, H - 26); g.lineTo(x, H); g.stroke(); }
+  }
+  $('go').onclick = async () => {
+    $('go').disabled = true; $('status').textContent = 'rendering… (about a minute)';
+    await new Promise((r) => setTimeout(r, 30));
+    try {
+      const r = await renderSoundtrack({ log: (m) => { $('status').textContent = m; } });
+      const url = URL.createObjectURL(new Blob([r.wav], { type: 'audio/wav' }));
+      $('player').src = url; $('dl').href = url; $('dl').hidden = false;
+      draw(r.L, r.R, r.report.cues);
+      $('cues').innerHTML = r.report.cues.map(([t, k, l]) => `<tr><td class="t">${t.toFixed(2)} s</td><td class="k">${k}</td><td>${l}</td></tr>`).join('');
+      const { cues, shortTerm, stems, ...rest } = r.report;
+      $('rep').textContent = JSON.stringify(rest, null, 1);
+      $('status').textContent = `done: ${r.report.lufs} LUFS, peak ${r.report.peakDb} dBFS`;
+    } catch (e) { $('status').textContent = 'failed: ' + e.message; console.error(e); }
+    $('go').disabled = false;
+  };
+  if (new URLSearchParams(location.search).get('headless') !== '1') {
+    $('cues').innerHTML = Object.entries(CUES).map(([k, v]) => `<tr><td class="t">${[].concat(v).join(' / ')}</td><td class="k">cue</td><td>${k}</td></tr>`).join('');
+  }
+</script>
+</body>
+</html>
